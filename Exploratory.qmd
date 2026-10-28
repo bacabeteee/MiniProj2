@@ -1,0 +1,295 @@
+---
+title: "Exploratory Data Analysis"
+format: html
+editor: visual
+---
+
+Header
+
+```{r}
+library(dplyr)
+library(knitr)
+library(ggplot2)
+library(forcats)
+library(tidyr)
+```
+
+## Democracies vs Non-Democracies
+
+```{r}
+project2_merged |>
+  count(Democracy) |>
+  ggplot(aes(x = Democracy, y = n, fill = Democracy)) +
+  geom_col(width = .5, color = "darkslategrey") +
+  geom_text(aes(label = n))
+ 
+```
+
+According to this bar graph, there are significantly ( \[91 - 74\] / \[91 +74\] = 10%) more non-democracies than democracies in the sample. This could add in bias to the model which can call into question the models ability to reliably predict democracies.
+
+## Democracy vs continuous variables
+
+(deepseek used)
+
+```         
+your_data |>   pivot_longer(     cols = c(var1, var2, var3),   # the y variables you want to facet over     names_to  = "variable",     values_to = "value"   ) |>   ggplot(aes(x = group_var, y = value, fill = group_var)) +   geom_boxplot(width = 0.6, outlier.shape = 21, outlier.size = 2) +   facet_wrap(~ variable, scales = "free_y", ncol = 3) +   # free_y is the key bit   labs(     title   = "Boxplots by Variable",     x       = NULL,     y       = "Value",     fill    = "Group"   ) +   theme_minimal(base_size = 13) +   theme(     strip.text      = element_text(face = "bold"),     axis.text.x     = element_text(angle = 45, hjust = 1),     legend.position = "bottom"   )
+```
+
+```{r}
+project2_merged |>
+  pivot_longer(
+    cols = c(sanitation_access_pct, food_supply_kcal_per_person_day, murder_deaths_per_100k, child_deaths_per_100k), 
+    names_to  = "variable",
+    values_to = "value"
+  ) |>
+  ggplot(aes(x = Democracy, y = value, fill = Democracy)) +
+  geom_boxplot(width = 0.6, outlier.shape = 21, outlier.size = 2) +
+  facet_wrap(~ variable, scales = "free_y", ncol = 3) + 
+  labs(
+    title   = "Boxplots by Variable",
+    x       = NULL,
+    y       = "Value",
+    fill    = "Group"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    strip.text      = element_text(face = "bold"),
+    axis.text.x     = element_text(angle = 45, hjust = 1),
+    legend.position = "bottom"
+  )
+```
+
+The key to analyzing apparent correlation between predictor and outcome in box and whisker plots is to identify significant differences between the categories, especially around the means of both. Child deaths, Food supply, and sanitation access all show significantly different relationships between Democracy Statuses. Murder Deaths don't seem to be significantly different between democracies and non-democracies.
+
+deepseek used
+
+library(tidyverse)
+
+long_data \<- project2_merged \|\> pivot_longer( cols = c(sanitation_access_pct, food_supply_kcal_per_person_day, murder_deaths_per_100k, child_deaths_per_100k), names_to = "variable", values_to = "value" )
+
+make_plot \<- function(var, ylab) { long_data \|\> filter(variable == var) \|\> ggplot(aes(x = Democracy, y = value, fill = Democracy)) + geom_boxplot(width = 0.6, outlier.shape = 21, outlier.size = 2) + labs(title = var, x = NULL, y = ylab, fill = "Group") + theme_minimal(base_size = 13) + theme( axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "bottom" ) }
+
+p1 \<- make_plot("sanitation_access_pct", "Sanitation access (%)") p2 \<- make_plot("food_supply_kcal_per_person_day", "Food supply (kcal/person/day)") p3 \<- make_plot("murder_deaths_per_100k", "Murder deaths per 100k") p4 \<- make_plot("child_deaths_per_100k", "Child deaths per 100k")
+
+p1; p2; p3; p4
+
+```{r}
+library(tidyverse)
+
+long_data <- project2_merged |>
+  pivot_longer(
+    cols = c(sanitation_access_pct, food_supply_kcal_per_person_day, 
+             murder_deaths_per_100k, child_deaths_per_100k), 
+    names_to  = "variable",
+    values_to = "value"
+  )
+
+make_plot <- function(var, ylab) {
+  long_data |>
+    filter(variable == var) |>
+    ggplot(aes(x = Democracy, y = value, fill = Democracy)) +
+    geom_boxplot(width = 0.6, outlier.shape = 21, outlier.size = 2) +
+    labs(title = var, x = NULL, y = ylab, fill = "Group") +
+    theme_minimal(base_size = 13) +
+    theme(
+      axis.text.x     = element_text(angle = 45, hjust = 1),
+      legend.position = "bottom"
+    )
+}
+
+p1 <- make_plot("sanitation_access_pct",            "Sanitation access (%)")
+p2 <- make_plot("food_supply_kcal_per_person_day",  "Food supply (kcal/person/day)")
+p3 <- make_plot("murder_deaths_per_100k",           "Murder deaths per 100k")
+p4 <- make_plot("child_deaths_per_100k",            "Child deaths per 100k")
+
+p1; p2; p3; p4
+```
+
+summary stats
+
+deepseek used
+
+```         
+library(tidyverse)
+
+# ---------- Summary stats ----------
+project2_merged |>
+  summarise(
+    n      = sum(!is.na(murder_deaths_per_100k)),
+    mean   = mean(murder_deaths_per_100k,   na.rm = TRUE),
+    median = median(murder_deaths_per_100k, na.rm = TRUE),
+    sd     = sd(murder_deaths_per_100k,     na.rm = TRUE),
+    min    = min(murder_deaths_per_100k,    na.rm = TRUE),
+    max    = max(murder_deaths_per_100k,    na.rm = TRUE)
+  )
+
+# ---------- 5 outliers by name ----------
+project2_merged |>
+  mutate(
+    q1     = quantile(murder_deaths_per_100k, .25, na.rm = TRUE),
+    q3     = quantile(murder_deaths_per_100k, .75, na.rm = TRUE),
+    iqr    = q3 - q1,
+    is_out = murder_deaths_per_100k < q1 - 1.5*iqr |
+             murder_deaths_per_100k > q3 + 1.5*iqr
+  ) |>
+  filter(is_out) |>
+  slice_max(abs(murder_deaths_per_100k -
+                  median(murder_deaths_per_100k, na.rm = TRUE)), n = 5) |>
+  select(name, Democracy, murder_deaths_per_100k)
+```
+
+```{r}
+library(tidyverse)
+
+long_data <- project2_merged |>
+  pivot_longer(
+    cols = c(sanitation_access_pct, food_supply_kcal_per_person_day, 
+             murder_deaths_per_100k, child_deaths_per_100k), 
+    names_to  = "variable",
+    values_to = "value"
+  )
+
+make_plot <- function(var, ylab) {
+graph <- long_data |>
+    filter(variable == var) |>
+    ggplot(aes(x = Democracy, y = value, fill = Democracy)) +
+    geom_boxplot(width = 0.6, outlier.shape = 21, outlier.size = 2) +
+    labs(title = var, x = NULL, y = ylab, fill = "Group") +
+    theme_minimal(base_size = 13) +
+    theme(
+      axis.text.x     = element_text(angle = 45, hjust = 1),
+      legend.position = "bottom"
+    )
+graph
+}
+make_table <- function(var) { 
+  table <- project2_merged |>
+  summarise(
+    n      = sum(!is.na(.data[[var]])),
+    mean   = mean(.data[[var]],   na.rm = TRUE),
+    median = median(.data[[var]], na.rm = TRUE),
+    sd     = sd(.data[[var]],     na.rm = TRUE),
+    min    = min(.data[[var]],    na.rm = TRUE),
+    max    = max(.data[[var]],    na.rm = TRUE)
+  )
+  print(table)
+}
+
+make_outlier <- function(var) {
+  table <- project2_merged |>
+  mutate(
+    q1     = quantile(.data[[var]], .25, na.rm = TRUE),
+    q3     = quantile(.data[[var]], .75, na.rm = TRUE),
+    iqr    = q3 - q1,
+    is_out = .data[[var]] < q1 - 1.5*iqr |
+      .data[[var]] > q3 + 1.5*iqr
+  ) |>
+  filter(is_out) |>
+  slice_max(abs(.data[[var]] -
+                  median(.data[[var]], na.rm = TRUE)), n = 5) |>
+  select(name, Democracy, .data[[var]])
+  print(table)
+}
+
+
+p1 <- make_plottable("sanitation_access_pct", "Sanitation access (%)")
+p2 <- make_plottable("food_supply_kcal_per_person_day",  "Food supply (kcal/person/day)")
+p3 <- make_plottable("murder_deaths_per_100k", "Murder deaths per 100k")
+p4 <- make_plottable("child_deaths_per_100k",            "Child deaths per 100k")
+
+t1 <- make_table("sanitation_access_pct")
+t2 <- make_table("food_supply_kcal_per_person_day")
+t3 <- make_table("murder_deaths_per_100k")
+t4 <- make_table("child_deaths_per_100k")
+
+o1 <- make_outlier("sanitation_access_pct")
+o2 <- make_outlier("food_supply_kcal_per_person_day")
+o3 <- make_outlier("murder_deaths_per_100k")
+o4 <- make_outlier("child_deaths_per_100k")
+
+
+```
+
+Qualitative/binary exploration
+
+## Two-way table
+
+A **two-way table** (also called a *contingency table* or *cross-tabulation*) counts how many observations fall into each combination of **two categorical variables**. Rows = one variable's categories, columns = the other's.
+
+For your data, if the predictor is categorical (e.g., a region/continent variable) and the response is `Democracy`, a two-way table looks like:
+
+|           | Democracy = 1 | Democracy = 0 | Total |
+|:----------|:--------------|:--------------|:------|
+| Region A  | 12            | 4             | 16    |
+| Region B  | 5             | 18            | 23    |
+| Region C  | 9             | 2             | 11    |
+| **Total** | 26            | 24            | 50    |
+
+Each cell is a **count** of rows with that combination. In R:
+
+r
+
+```         
+table(project2_merged$region, project2_merged$Democracy)
+```
+
+Or with tidyverse:
+
+r
+
+```         
+project2_merged |> count(region, Democracy) |> pivot_wider(names_from = Democracy, values_from = n)
+```
+
+## Proportions
+
+Proportions just turn those counts into fractions — "what share of each group..." There are three useful versions, depending on what you want to describe:
+
+**1. Row proportions** — within each row (region), what fraction are Democracy = 1?
+
+r
+
+```         
+prop.table(table(project2_merged$region, project2_merged$Democracy), margin = 1)
+```
+
+> "63% of Region A is democratic, 22% of Region B is democratic, 82% of Region C is democratic."
+
+**2. Column proportions** — within each column (Democracy status), what fraction comes from each region?
+
+r
+
+```         
+prop.table(table(project2_merged$region, project2_merged$Democracy), margin = 2)
+```
+
+**3. Overall proportions** — each cell as a fraction of the grand total.
+
+r
+
+```         
+prop.table(table(project2_merged$region, project2_merged$Democracy))
+```
+
+```{r}
+#two way table
+table(project2_merged$female_hos_binary, project2_merged$Democracy)
+
+#row proportions
+prop.table(table(project2_merged$female_hos_binary, project2_merged$Democracy), margin = 2)
+
+#column proportions
+prop.table(table(project2_merged$female_hos_binary, project2_merged$Democracy))
+```
+
+deepseek used
+
+make a stacked bar chart of y value Democracy vs x value female_hos_binary using project2_merged
+
+library(ggplot2) library(dplyr)
+
+ggplot(project2_merged, aes(x = female_hos_binary, fill = Democracy)) + geom_bar(position = "fill") + labs( title = "Democracy Status by Female Head of State", x = "Female head of state (binary)", y = "Proportion", fill = "Democracy" ) + theme_minimal(base_size = 13)
+
+```{r}
+ggplot(project2_merged, aes(x = female_hos_binary, fill = Democracy)) + geom_bar(position = "fill") + labs( title = "Democracy Status by Female Head of State", x = "Female head of state (binary)", y = "Proportion", fill = "Democracy" ) + theme_minimal(base_size = 13)
+```

@@ -1,0 +1,246 @@
+---
+title: "Mini-project 2 Template"
+author: "Team member names here."
+format: html
+self-contained: true
+editor: visual
+---
+
+Feel free to change render format to html using
+
+format: html
+
+self-contained: true
+
+## Instructions
+
+This is the template document for mini-project 2. You must use the template document for your code, since it will make it much easier to follow.
+
+## Libraries and data load
+
+Put whatever libraries you use here.
+
+```{r}
+library(dplyr)
+library(knitr)
+library(ggplot2)
+library(forcats)
+library(tidyr)
+library(tidyverse)
+```
+
+Load your data here
+
+```{r}
+init_1 <-
+  read_csv("project1_2025_merged.csv") |>
+  select(-name)
+
+init_2 <-
+  read_csv("democracy2020.csv")
+
+merge <-
+  merge.data.frame(init_1, init_2, by = "geo")
+  
+project_2_2025 <- merge |> 
+  select(-life_expectancy)
+  
+```
+
+## Exploratory data analysis
+
+For this section graph and find statistics for each of your predictor variables vs the response. You do not need to look at the predictor variables individually
+
+```{r}
+#| include: false
+long_data <- project2_merged |>
+  pivot_longer(
+    cols = c(sanitation_access_pct, food_supply_kcal_per_person_day, 
+             murder_deaths_per_100k, child_deaths_per_100k), 
+    names_to  = "variable",
+    values_to = "value"
+  )
+
+make_plot <- function(var, ylab) {
+  graph <- long_data |>
+    filter(variable == var) |>
+    ggplot(aes(x = Democracy, y = value, fill = Democracy)) +
+    geom_boxplot(width = 0.6, outlier.shape = 21, outlier.size = 2) +
+    labs(title = paste(ylab, " by Democracy Status"), x = "Democracy Status", y = ylab, fill = "Group") +
+    theme_minimal(base_size = 13) +
+    theme(
+      axis.text.x     = element_text(angle = 45, hjust = 1),
+      legend.position = "bottom"
+    )
+  graph
+}
+make_table <- function(var) { 
+  table <- project2_merged |>
+    summarise(
+      n      = sum(!is.na(.data[[var]])),
+      mean   = mean(.data[[var]],   na.rm = TRUE),
+      median = median(.data[[var]], na.rm = TRUE),
+      sd     = sd(.data[[var]],     na.rm = TRUE),
+      min    = min(.data[[var]],    na.rm = TRUE),
+      max    = max(.data[[var]],    na.rm = TRUE),
+    )
+  print(table)
+}
+
+make_outlier <- function(var) {
+  table <- project2_merged |>
+    mutate(
+      q1     = quantile(.data[[var]], .25, na.rm = TRUE),
+      q3     = quantile(.data[[var]], .75, na.rm = TRUE),
+      iqr    = q3 - q1,
+      is_out = .data[[var]] < q1 - 1.5*iqr |
+        .data[[var]] > q3 + 1.5*iqr
+    ) |>
+    filter(is_out) |>
+    slice_max(abs(.data[[var]] -
+                    median(.data[[var]], na.rm = TRUE)), n = 5) |>
+    select(name, Democracy, .data[[var]])
+  print(table)
+}
+
+
+p1 <- make_plot("sanitation_access_pct", "Sanitation access (%)")
+p2 <- make_plot("food_supply_kcal_per_person_day",  "Food supply (kcal/person/day)")
+p3 <- make_plot("murder_deaths_per_100k", "Murder deaths per 100k")
+p4 <- make_plot("child_deaths_per_100k",            "Child deaths per 100k")
+
+t1 <- make_table("sanitation_access_pct")
+t2 <- make_table("food_supply_kcal_per_person_day")
+t3 <- make_table("murder_deaths_per_100k")
+t4 <- make_table("child_deaths_per_100k")
+
+o1 <- make_outlier("sanitation_access_pct")
+o2 <- make_outlier("food_supply_kcal_per_person_day")
+o3 <- make_outlier("murder_deaths_per_100k")
+o4 <- make_outlier("child_deaths_per_100k")
+
+```
+
+## Variable 1: Sanitation Access
+
+### Graph and description
+
+```{r}
+p1; t1; o1
+```
+
+### Stats and description
+
+looking at the means of total sanitation access and by democracy status, non-democracies almost match the total mean (79%) while Democracies have almost 100% sanitation access. Implied in this analysis is that the samples by democracy status are significantly different and would be a good candidate for a single variable model. The 5 farthest outliers are all non-democracies and have below 20% sanitation access. 
+
+## Variable 2: Food Supply
+
+### Graph and description
+
+```{r}
+p2; t2; o2
+```
+
+### Stats and description
+
+looking at the means of food supply by democracy status, non-democracies fall below the total mean (~2963 kcal/person/day) while Democracies fall above the total mean. Implied in this analysis is that the samples by democracy status are significantly different and would be a good candidate for a single variable model. There are no significant outliers in this comparison.
+
+## Variable 3: Deaths from Murder
+
+### Graph and description
+
+```{r}
+p3; t3; o3
+```
+
+### Stats and description
+looking at the means of murders per capita by democracy status, both non-democracies and democracies fell around the total mean (~7.4 per capita) non-democracies had slightly higher murders per capita. Implied in this analysis is that the samples by democracy status appear to not be significantly different and should not be considered for the single variable model. There are 3 non-democratic outliers above 50 per capita and 2 democratic outliers above 20 per capita. 
+
+## Variable 4: Child Deaths
+
+### Graph and description
+
+```{r}
+p4; t4; o4
+```
+
+### Stats and description
+looking at the means of child deaths per capita by democracy status, democracies fell below the total mean (~64 per capita) non-democracies had higher child deaths per capita. The two measn seem to be significantly different, and this variable is a good candidate for the single vairable model. All five farthest outliers are non-democracies and have above 240 child deaths per capita.
+
+## Variable 5: Female Head of State
+
+### Graph and description
+
+```{r}
+ggplot(project2_merged, aes(x = female_hos_binary, fill = Democracy)) + geom_bar(position = "fill") + labs( title = "Democracy Status by Female Head of State", x = "Female head of state (binary)", y = "Proportion", fill = "Democracy" ) + theme_minimal(base_size = 13)
+
+#two way table
+as.data.frame(table(project2_merged$female_hos_binary, project2_merged$Democracy))
+
+#row proportions
+as.data.frame(prop.table(table(project2_merged$female_hos_binary, project2_merged$Democracy), margin = 2))
+
+#column proportions
+as.data.frame(prop.table(table(project2_merged$female_hos_binary, project2_merged$Democracy)))
+
+```
+
+### Stats and description
+
+The only state that survived into this merged dataset is Tanzania, being a one party state and a non-democracy. I am beginning to think the Female head of state category was poorly designed, maybe if the variable was redifined to mean "has had a female head of state" versus "has a female head of state". This variable does not have enough data for both democracies and non-democracies to be considered for the single variable model.
+
+## Which variable for single variable models?
+
+From your exploratory data analysis, which variable will you use for the single variable models? Why? \## kNN classification
+
+were going with food supply for our single variable model because it showed the most significant difference between the two means.
+
+### Single variable model
+
+Make a kNN model using your best predictor variable \#### Model tuning to find k
+
+#### Model for best k
+
+#### Model evaluation-accuracy, cv for overfitting
+
+### All variable model
+
+Make a kNN model using all your predictor variables \#### Model tuning to find k using cv.
+
+#### Model for best k
+
+#### Model evaluation-accuracy, cv for overfitting
+
+### Which model was best?
+
+Of your two kNN models which performed the best? Why? If it was the multivariate model was it worth the trade off of complexity? Why?
+
+## Logistic Regression
+
+### Single variable model
+
+Make a logistic regression model using your best predictor variable \#### Model
+
+#### Equation and Graph of model
+
+#### Model evaluation-p-values, accuracy, cv for overfitting, roc, auc
+
+### All variable model
+
+Make a logistic regression model using all your predictor variables \#### Model
+
+#### Equation of model
+
+#### Model evaluation-p-values, accuracy, cv for overfitting, roc, auc
+
+### Which model was best?
+
+Of your two logistic regression models which performed the best? Why? If it was the multivariate model was it worth the trade off of complexity? Why?
+
+## Best model
+
+Which model would you reccomend the lab use? Why? Are there tradeoff between interpretability and model metrics?
+
+## Your question
+
+You will write your own question about the data, create a data visualization that can help answer your question, and write an answer to your question. The question/visualization should explore the relationship between at least 2 of the variables in the dataset. Be sure you include both the question and the answer to your question based on the visualization you have created. It should be a different question than last mini-project.
