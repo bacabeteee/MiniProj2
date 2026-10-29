@@ -1,6 +1,6 @@
 ---
 title: "Mini-project 2 Template"
-author: "Team member names here."
+author: "Alexandre Turgis, Kunal Ghosh"
 format: html
 self-contained: true
 editor: visual
@@ -32,19 +32,10 @@ library(tidyverse)
 Load your data here
 
 ```{r}
-init_1 <-
-  read_csv("project1_2025_merged.csv") |>
-  select(-name)
-
-init_2 <-
-  read_csv("democracy2020.csv")
-
-merge <-
-  merge.data.frame(init_1, init_2, by = "geo")
-  
-project_2_2025 <- merge |> 
-  select(-life_expectancy)
-  
+# project2_merged.csv = Mini-Project 1 data merged with democracy2020.csv (by geo)
+project2_merged <- read_csv("project2_merged.csv", show_col_types = FALSE) |>
+  select(-1) |>
+  mutate(Democracy = factor(Democracy, levels = c("No", "Yes")))
 ```
 
 ## Exploratory data analysis
@@ -131,7 +122,7 @@ p1; t1; o1
 
 ### Stats and description
 
-looking at the means of total sanitation access and by democracy status, non-democracies almost match the total mean (79%) while Democracies have almost 100% sanitation access. Implied in this analysis is that the samples by democracy status are significantly different and would be a good candidate for a single variable model. The 5 farthest outliers are all non-democracies and have below 20% sanitation access. 
+looking at the means of total sanitation access and by democracy status, non-democracies almost match the total mean (79%) while Democracies have almost 100% sanitation access. Implied in this analysis is that the samples by democracy status are significantly different and would be a good candidate for a single variable model. The 5 farthest outliers are all non-democracies and have below 20% sanitation access.
 
 ## Variable 2: Food Supply
 
@@ -143,7 +134,7 @@ p2; t2; o2
 
 ### Stats and description
 
-looking at the means of food supply by democracy status, non-democracies fall below the total mean (~2963 kcal/person/day) while Democracies fall above the total mean. Implied in this analysis is that the samples by democracy status are significantly different and would be a good candidate for a single variable model. There are no significant outliers in this comparison.
+looking at the means of food supply by democracy status, non-democracies fall below the total mean (\~2963 kcal/person/day) while Democracies fall above the total mean. Implied in this analysis is that the samples by democracy status are significantly different and would be a good candidate for a single variable model. There are no significant outliers in this comparison.
 
 ## Variable 3: Deaths from Murder
 
@@ -154,7 +145,8 @@ p3; t3; o3
 ```
 
 ### Stats and description
-looking at the means of murders per capita by democracy status, both non-democracies and democracies fell around the total mean (~7.4 per capita) non-democracies had slightly higher murders per capita. Implied in this analysis is that the samples by democracy status appear to not be significantly different and should not be considered for the single variable model. There are 3 non-democratic outliers above 50 per capita and 2 democratic outliers above 20 per capita. 
+
+looking at the means of murders per capita by democracy status, both non-democracies and democracies fell around the total mean (\~7.4 per capita) non-democracies had slightly higher murders per capita. Implied in this analysis is that the samples by democracy status appear to not be significantly different and should not be considered for the single variable model. There are 3 non-democratic outliers above 50 per capita and 2 democratic outliers above 20 per capita.
 
 ## Variable 4: Child Deaths
 
@@ -165,7 +157,8 @@ p4; t4; o4
 ```
 
 ### Stats and description
-looking at the means of child deaths per capita by democracy status, democracies fell below the total mean (~64 per capita) non-democracies had higher child deaths per capita. The two measn seem to be significantly different, and this variable is a good candidate for the single vairable model. All five farthest outliers are non-democracies and have above 240 child deaths per capita.
+
+looking at the means of child deaths per capita by democracy status, democracies fell below the total mean (\~64 per capita) non-democracies had higher child deaths per capita. The two measn seem to be significantly different, and this variable is a good candidate for the single vairable model. All five farthest outliers are non-democracies and have above 240 child deaths per capita.
 
 ## Variable 5: Female Head of State
 
@@ -191,56 +184,321 @@ The only state that survived into this merged dataset is Tanzania, being a one p
 
 ## Which variable for single variable models?
 
-From your exploratory data analysis, which variable will you use for the single variable models? Why? \## kNN classification
+We are going with **food supply** for our single variable model because it showed one of the clearest differences between the two groups (democracies have a higher food supply) and, unlike sanitation access, it has only 5 missing values and is not squeezed against a ceiling of 100%. Child deaths and sanitation access also separate the groups well, but food supply is the variable we chose in the exploratory analysis.
 
-were going with food supply for our single variable model because it showed the most significant difference between the two means.
+Female head of state is left out of the all-variable models: it is missing for all 74 democracies and equals 1 for only a single country, so it carries no usable information. The murder rate is kept in the all-variable models even though it separated the groups poorly, and the models can tell us whether it adds anything.
+
+## kNN classification
+
+Setup shared by both kNN models: rows with missing values in the variables used are dropped, predictors are standardized (kNN is distance based, so kcal and percent would otherwise be on very different scales), and the same 10 cross-validation folds are used for every candidate k so the comparisons are fair. Standardization is done inside each fold using only the training part of the fold. "Yes" (democracy) is treated as the positive class.
+
+```{r}
+set.seed(380)
+
+# standardize test data with training means / sds
+scale_by <- function(train, test) {
+  m <- colMeans(train); s <- apply(train, 2, sd)
+  list(train = scale(train, m, s), test = scale(test, m, s))
+}
+
+# 10-fold CV accuracy of kNN for a given k
+cv_knn <- function(dat, vars, k, folds) {
+  X <- as.matrix(dat[, vars]); y <- dat$Democracy
+  acc <- sapply(sort(unique(folds)), function(f) {
+    tr <- folds != f
+    sc <- scale_by(X[tr, , drop = FALSE], X[!tr, , drop = FALSE])
+    pred <- class::knn(sc$train, sc$test, y[tr], k = k)
+    mean(pred == y[!tr])
+  })
+  mean(acc)
+}
+
+# training (resubstitution) accuracy
+train_knn <- function(dat, vars, k) {
+  X <- scale(as.matrix(dat[, vars]))
+  mean(class::knn(X, X, dat$Democracy, k = k) == dat$Democracy)
+}
+
+tune_knn <- function(dat, vars, ks = 1:30) {
+  folds <- sample(rep(1:10, length.out = nrow(dat)))
+  tibble(k = ks,
+         cv_accuracy = sapply(ks, function(k) cv_knn(dat, vars, k, folds)))
+}
+
+plot_tune <- function(tune, title) {
+  best <- tune |> slice_max(cv_accuracy, n = 1, with_ties = FALSE)
+  ggplot(tune, aes(k, cv_accuracy)) +
+    geom_line() + geom_point() +
+    geom_point(data = best, color = "red", size = 3) +
+    labs(title = title, x = "k (number of neighbors)",
+         y = "10-fold CV accuracy") +
+    theme_minimal(base_size = 13)
+}
+
+# baseline: always guess the majority class
+baseline <- max(prop.table(table(project2_merged$Democracy)))
+```
 
 ### Single variable model
 
-Make a kNN model using your best predictor variable \#### Model tuning to find k
+kNN using food supply (kcal per person per day) only.
+
+```{r}
+d_food <- project2_merged |>
+  select(Democracy, food_supply_kcal_per_person_day) |>
+  drop_na()
+nrow(d_food)
+```
+
+#### Model tuning to find k
+
+```{r}
+tune_food <- tune_knn(d_food, "food_supply_kcal_per_person_day")
+plot_tune(tune_food, "kNN, food supply only: choosing k")
+best_k_food <- tune_food |>
+  slice_max(cv_accuracy, n = 1, with_ties = FALSE) |> pull(k)
+tune_food |> slice_max(cv_accuracy, n = 5, with_ties = FALSE)
+best_k_food
+```
 
 #### Model for best k
 
+```{r}
+X <- scale(as.matrix(d_food[, "food_supply_kcal_per_person_day"]))
+knn_food <- class::knn(X, X, d_food$Democracy, k = best_k_food)
+table(Predicted = knn_food, Actual = d_food$Democracy)
+```
+
 #### Model evaluation-accuracy, cv for overfitting
+
+```{r}
+acc_knn_food_train <- train_knn(d_food, "food_supply_kcal_per_person_day", best_k_food)
+acc_knn_food_cv    <- max(tune_food$cv_accuracy)
+tibble(model = "kNN, food supply", k = best_k_food,
+       training_accuracy = acc_knn_food_train,
+       cv_accuracy = acc_knn_food_cv,
+       gap = acc_knn_food_train - acc_knn_food_cv,
+       baseline = baseline)
+```
+
+Using food supply alone, the best k was 21 (10-fold CV accuracy about 0.71). That is only moderately better than always guessing "No" (about 55% of countries are non-democracies). Training accuracy (0.70) and CV accuracy (0.71) are essentially equal, so there is no sign of overfitting; the large k is a smooth, heavily averaged model. Note that the CV accuracy of the *best* k is slightly optimistic because we picked k by looking at the same folds. With only one predictor, there is a lot of overlap between the two groups, which caps the accuracy.
 
 ### All variable model
 
-Make a kNN model using all your predictor variables \#### Model tuning to find k using cv.
+kNN using sanitation access, food supply, murder rate and child death rate (female head of state excluded, see above).
+
+```{r}
+all_vars <- c("sanitation_access_pct", "food_supply_kcal_per_person_day",
+              "murder_deaths_per_100k", "child_deaths_per_100k")
+d_all <- project2_merged |>
+  select(Democracy, all_of(all_vars)) |>
+  drop_na()
+nrow(d_all)
+```
+
+#### Model tuning to find k using cv.
+
+```{r}
+tune_all <- tune_knn(d_all, all_vars)
+plot_tune(tune_all, "kNN, all variables: choosing k")
+best_k_all <- tune_all |>
+  slice_max(cv_accuracy, n = 1, with_ties = FALSE) |> pull(k)
+tune_all |> slice_max(cv_accuracy, n = 5, with_ties = FALSE)
+best_k_all
+```
 
 #### Model for best k
 
+```{r}
+X <- scale(as.matrix(d_all[, all_vars]))
+knn_all <- class::knn(X, X, d_all$Democracy, k = best_k_all)
+table(Predicted = knn_all, Actual = d_all$Democracy)
+```
+
 #### Model evaluation-accuracy, cv for overfitting
+
+```{r}
+acc_knn_all_train <- train_knn(d_all, all_vars, best_k_all)
+acc_knn_all_cv    <- max(tune_all$cv_accuracy)
+tibble(model = "kNN, all variables", k = best_k_all,
+       training_accuracy = acc_knn_all_train,
+       cv_accuracy = acc_knn_all_cv,
+       gap = acc_knn_all_train - acc_knn_all_cv,
+       baseline = max(prop.table(table(d_all$Democracy))))
+```
+
+With all four predictors the best k was 8 (CV accuracy about 0.70). The training accuracy (0.77) is clearly higher than the CV accuracy (0.70), a gap of about 7 points, so this model fits the training data better than it predicts new countries, which is a mild sign of overfitting. The CV curve is also noisy across k, so the exact choice of k is not very stable.
 
 ### Which model was best?
 
-Of your two kNN models which performed the best? Why? If it was the multivariate model was it worth the trade off of complexity? Why?
+The two kNN models are essentially tied on cross-validated accuracy (0.71 for food supply only vs 0.70 for all variables), and with roughly 150 countries a difference of 1 point is well within noise (the standard error of an accuracy estimate is about 4 points). The multivariate model is more complex, needs more complete data (8 fewer countries) and shows a bigger training-vs-CV gap, while buying no extra accuracy. So the **single variable (food supply) kNN model is best**: the added complexity of the all-variable model was not worth it.
 
 ## Logistic Regression
 
+Same data and the same "Yes" = positive class. Predicted probabilities above 0.5 are classified as democracies. Cross-validation uses 10 folds; ROC curves and AUC are computed from the out-of-fold predicted probabilities so that they are not overly optimistic.
+
+```{r}
+library(pROC)
+set.seed(380)
+
+cv_logit <- function(dat, formula) {
+  folds <- sample(rep(1:10, length.out = nrow(dat)))
+  p <- numeric(nrow(dat))
+  for (f in 1:10) {
+    fit <- glm(formula, data = dat[folds != f, ], family = binomial)
+    p[folds == f] <- predict(fit, dat[folds == f, ], type = "response")
+  }
+  list(prob = p,
+       accuracy = mean((p > 0.5) == (dat$Democracy == "Yes")),
+       roc = roc(dat$Democracy, p, levels = c("No", "Yes"), direction = "<", quiet = TRUE))
+}
+```
+
 ### Single variable model
 
-Make a logistic regression model using your best predictor variable \#### Model
+#### Model
+
+```{r}
+logit_food <- glm(Democracy ~ food_supply_kcal_per_person_day,
+                  data = d_food, family = binomial)
+summary(logit_food)
+```
 
 #### Equation and Graph of model
 
+```{r}
+b <- coef(logit_food)
+b
+exp(b[2] * 100)   # odds multiplier for +100 kcal per person per day
+-b[1] / b[2]      # food supply at which P(democracy) = 0.5
+```
+
+$$\log\left(\frac{\hat p}{1-\hat p}\right) = -6.7113 + 0.002184 \times \text{FoodSupply}$$
+
+where $\hat p$ is the predicted probability that a country is a democracy and FoodSupply is in kcal per person per day.
+
+```{r}
+grid <- tibble(food_supply_kcal_per_person_day =
+                 seq(min(d_food$food_supply_kcal_per_person_day),
+                     max(d_food$food_supply_kcal_per_person_day), length.out = 200))
+grid$p <- predict(logit_food, grid, type = "response")
+
+ggplot() +
+  geom_jitter(data = d_food,
+              aes(food_supply_kcal_per_person_day, as.numeric(Democracy == "Yes"),
+                  color = Democracy), height = 0.03, alpha = 0.6) +
+  geom_line(data = grid, aes(food_supply_kcal_per_person_day, p), linewidth = 1) +
+  geom_hline(yintercept = 0.5, linetype = "dashed", color = "grey50") +
+  labs(title = "Logistic regression: P(democracy) vs food supply",
+       x = "Food supply (kcal per person per day)", y = "Predicted P(democracy)") +
+  theme_minimal(base_size = 13)
+```
+
 #### Model evaluation-p-values, accuracy, cv for overfitting, roc, auc
+
+```{r}
+p_in  <- predict(logit_food, type = "response")
+acc_lf_train <- mean((p_in > 0.5) == (d_food$Democracy == "Yes"))
+table(Predicted = ifelse(p_in > 0.5, "Yes", "No"), Actual = d_food$Democracy)
+
+cv_lf <- cv_logit(d_food, Democracy ~ food_supply_kcal_per_person_day)
+roc_lf_train <- roc(d_food$Democracy, p_in, levels = c("No", "Yes"), direction = "<", quiet = TRUE)
+
+tibble(model = "logistic, food supply",
+       training_accuracy = acc_lf_train,
+       cv_accuracy = cv_lf$accuracy,
+       gap = acc_lf_train - cv_lf$accuracy,
+       train_auc = as.numeric(auc(roc_lf_train)),
+       cv_auc = as.numeric(auc(cv_lf$roc)))
+
+plot(cv_lf$roc, main = "ROC (10-fold CV): food supply only", print.auc = TRUE)
+```
+
+Food supply is a highly significant predictor (p \< 0.001). Each additional 100 kcal per person per day multiplies the odds of being a democracy by about 1.24, and the predicted probability crosses 0.5 at about 3,070 kcal per person per day. Training accuracy (0.69) and CV accuracy (0.69) are nearly identical, so there is no overfitting, and the CV AUC of about 0.76 means the model ranks a random democracy above a random non-democracy about three quarters of the time: useful, but far from perfect.
 
 ### All variable model
 
-Make a logistic regression model using all your predictor variables \#### Model
+#### Model
+
+```{r}
+logit_all <- glm(Democracy ~ sanitation_access_pct + food_supply_kcal_per_person_day +
+                   murder_deaths_per_100k + child_deaths_per_100k,
+                 data = d_all, family = binomial)
+summary(logit_all)
+```
 
 #### Equation of model
 
+```{r}
+round(coef(logit_all), 5)
+```
+
+$$\log\left(\frac{\hat p}{1-\hat p}\right) = -0.7313 + (-0.0221)\,\text{Sanitation} + 0.0011\,\text{Food} + 0.0324\,\text{Murder} + (-0.0247)\,\text{ChildDeaths}$$
+
 #### Model evaluation-p-values, accuracy, cv for overfitting, roc, auc
+
+```{r}
+p_in <- predict(logit_all, type = "response")
+acc_la_train <- mean((p_in > 0.5) == (d_all$Democracy == "Yes"))
+table(Predicted = ifelse(p_in > 0.5, "Yes", "No"), Actual = d_all$Democracy)
+
+cv_la <- cv_logit(d_all, Democracy ~ sanitation_access_pct + food_supply_kcal_per_person_day +
+                    murder_deaths_per_100k + child_deaths_per_100k)
+roc_la_train <- roc(d_all$Democracy, p_in, levels = c("No", "Yes"), direction = "<", quiet = TRUE)
+
+tibble(model = "logistic, all variables",
+       training_accuracy = acc_la_train,
+       cv_accuracy = cv_la$accuracy,
+       gap = acc_la_train - cv_la$accuracy,
+       train_auc = as.numeric(auc(roc_la_train)),
+       cv_auc = as.numeric(auc(cv_la$roc)))
+
+plot(cv_la$roc, main = "ROC (10-fold CV): all variables", print.auc = TRUE)
+```
+
+In the all-variable model only child deaths per 100k is significant at the 5% level (p = 0.011; +10 child deaths per 100k multiplies the odds of democracy by about 0.78). Food supply (p = 0.087), the murder rate (p = 0.110) and sanitation access (p = 0.26) are not significant once the others are included. Sanitation, food supply and child deaths are strongly related to one another (all reflect development), so the model cannot separate their effects well, and the positive sign on murder rate is not a causal finding, just something the model uses to adjust for the other variables. Training accuracy is 0.74 vs CV accuracy 0.70 (gap of about 3 points), and the CV AUC is about 0.78 (training AUC 0.81), so there is a small amount of overfitting.
 
 ### Which model was best?
 
-Of your two logistic regression models which performed the best? Why? If it was the multivariate model was it worth the trade off of complexity? Why?
+The all-variable model is slightly better on paper (CV accuracy 0.70 vs 0.69, CV AUC 0.78 vs 0.76), but the improvement is small, it has a larger training-vs-CV gap, and only one of its four predictors is individually significant. The single variable model is almost as good, has no overfitting gap, and has a one-sentence interpretation. We consider the extra complexity of the multivariate model **not clearly worth it**, although it is the better choice if the only goal is to maximize AUC.
 
 ## Best model
 
-Which model would you reccomend the lab use? Why? Are there tradeoff between interpretability and model metrics?
+```{r}
+# For a fair side-by-side, the single-variable models use their own complete cases
+# and the all-variable models use theirs (a few more rows are dropped).
+tibble(
+  model = c("kNN, food supply", "kNN, all variables",
+            "Logistic, food supply", "Logistic, all variables"),
+  n = c(nrow(d_food), nrow(d_all), nrow(d_food), nrow(d_all)),
+  cv_accuracy = c(acc_knn_food_cv, acc_knn_all_cv, cv_lf$accuracy, cv_la$accuracy),
+  cv_auc = c(NA, NA, as.numeric(auc(cv_lf$roc)), as.numeric(auc(cv_la$roc)))
+)
+```
+
+All four models land in the same narrow range (CV accuracy 0.69 to 0.71), well above the 53 to 55% baseline but far from perfect, and the differences are within the noise for a sample of about 150 countries. We would recommend the **single variable logistic regression using food supply**. It gives up almost nothing in accuracy (0.69 vs 0.70 to 0.71), shows no overfitting, needs the fewest complete observations, and is fully interpretable (odds ×1.24 per 100 kcal, cutoff near 3,070 kcal), and it also gives probabilities and an AUC (0.76) that kNN does not. Yes, there is a tradeoff: kNN has no equation and can capture non-linear patterns but is hard to explain, and the all-variable logistic model has the highest AUC (0.78) but its coefficients are hard to interpret because the predictors are correlated. Because democracy status is poorly predicted by these development indicators in every model, none of them should be used as more than a rough screening tool.
 
 ## Your question
 
-You will write your own question about the data, create a data visualization that can help answer your question, and write an answer to your question. The question/visualization should explore the relationship between at least 2 of the variables in the dataset. Be sure you include both the question and the answer to your question based on the visualization you have created. It should be a different question than last mini-project.
+**Question:** Is the link between sanitation access and child mortality the same in democracies and non-democracies? In other words, at the same level of sanitation access, do democracies still have lower child death rates, or is the gap just a reflection of democracies being wealthier and having better infrastructure?
+
+```{r}
+project2_merged |>
+  drop_na(sanitation_access_pct) |>
+  ggplot(aes(sanitation_access_pct, child_deaths_per_100k, color = Democracy)) +
+  geom_point(alpha = 0.7) +
+  geom_smooth(method = "lm", se = TRUE) +
+  labs(title = "Child deaths vs sanitation access, by democracy status",
+       x = "Sanitation access (%)", y = "Child deaths per 100k",
+       color = "Democracy") +
+  theme_minimal(base_size = 13)
+
+q_dat <- project2_merged |> drop_na(sanitation_access_pct)
+summary(lm(child_deaths_per_100k ~ sanitation_access_pct * Democracy, data = q_dat))$coefficients
+q_dat |> group_by(Democracy) |>
+  summarise(n = n(), r = cor(sanitation_access_pct, child_deaths_per_100k),
+            mean_sanitation = mean(sanitation_access_pct),
+            mean_child = mean(child_deaths_per_100k))
+```
+
+**Answer:** No, the relationship is not the same, but the gap largely disappears where sanitation is good. In both groups child deaths fall steeply as sanitation access rises (correlation about -0.86 in non-democracies and -0.83 in democracies). However, the interaction term is significant (p = 0.005): the slope is about -2.8 child deaths per 100k per percentage point of sanitation in non-democracies but only about -1.9 in democracies. The model implies that at 50% sanitation access democracies have roughly 55 fewer child deaths per 100k than non-democracies, at 80% about 26 fewer, and at 100% only about 6 fewer. So part of the overall gap in child deaths (about 100 vs 21 per 100k) is simply because democracies have much higher sanitation access (mean 91% vs 69%), and the remaining democracy advantage is concentrated among countries with poor sanitation. This is an association from 154 countries and not evidence that democracy causes lower child mortality; wealth, which we do not have in this data, is a likely common driver.
